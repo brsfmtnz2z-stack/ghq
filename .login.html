@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>G.H.Q - 登录</title>
+<link rel="stylesheet" href="common.css">
+</head>
+<body class="login-body">
+<div class="bg-text" style="top:10%;left:8%">不可名状</div>
+<div class="bg-text" style="top:22%;right:12%">人皮纸</div>
+<div class="bg-text" style="bottom:18%;left:12%">域开启</div>
+<div class="bg-text" style="bottom:25%;right:8%">S级灵异</div>
+<div class="bg-text" style="top:40%;left:3%">鬼眼</div>
+<div class="bg-text" style="bottom:8%;right:30%">洞窥规律</div>
+<div class="bg-text" style="top:8%;right:35%">复苏倒计时</div>
+<div class="login-container">
+  <div class="logo">◉</div>
+  <div class="title">全球灵异事件处理总部</div>
+  <div class="subtitle">G.H.Q. GHOST PROTOCOL</div>
+  <form id="loginForm">
+    <div class="input-group"><input type="text" id="username" placeholder="请输入特工代号" autocomplete="off" required></div>
+    <div class="input-group"><input type="password" id="password" placeholder="请输入密钥" required></div>
+    <div class="error-msg" id="errorMsg"></div>
+    <div class="options">
+      <label><input type="checkbox" id="remember" checked> 记住登录</label>
+      <a id="toRegister">申请注册</a>
+    </div>
+    <button type="submit" class="btn-login">进 入 总 部</button>
+  </form>
+  <form id="registerForm" class="hidden">
+    <div class="input-group"><input type="text" id="regUser" placeholder="设置特工代号" autocomplete="off" required></div>
+    <div class="input-group"><input type="password" id="regPass" placeholder="设置密钥（至少6位）" required></div>
+    <div class="input-group"><input type="password" id="regPass2" placeholder="再次确认密钥" required></div>
+    <div class="error-msg" id="regError"></div>
+    <div class="options"><a id="toLogin">← 返回登录</a></div>
+    <button type="submit" class="btn-login">注 册 新 特 工</button>
+  </form>
+  <div class="footer-note">本站内容仅供娱乐，所有内容均为虚构，请勿当真<br>演示账号：Shiyi13 / 123456 &nbsp;|&nbsp; 管理员：admin / admin888</div>
+</div>
+<script>
+const BUILTIN={Shiyi13:{password:'123456',role:'agent',displayName:'十一'},admin:{password:'admin888',role:'admin',displayName:'总指挥'}};
+function loadReg(){try{return JSON.parse(localStorage.getItem('ghq_registered')||'{}')}catch{return{}}}
+function allUsers(){return Object.assign({},BUILTIN,loadReg())}
+const loginForm=document.getElementById('loginForm'),registerForm=document.getElementById('registerForm'),errorMsg=document.getElementById('errorMsg'),regError=document.getElementById('regError');
+loginForm.addEventListener('submit',e=>{
+  e.preventDefault();
+  const u=document.getElementById('username').value.trim(),p=document.getElementById('password').value,user=allUsers()[u];
+  if(!user||user.password!==p){errorMsg.textContent='✖ 代号或密钥错误，拒绝访问。';errorMsg.style.display='block';setTimeout(()=>errorMsg.style.display='none',3000);return;}
+  sessionStorage.setItem('ghq_session',JSON.stringify({username:u,displayName:user.displayName||u,role:user.role||'agent',loginAt:Date.now()}));
+  setTimeout(()=>location.href=user.role==='admin'?'admin.html':'dashboard.html',300);
+});
+document.getElementById('toRegister').addEventListener('click',()=>{loginForm.classList.add('hidden');registerForm.classList.remove('hidden');regError.style.display='none'});
+document.getElementById('toLogin').addEventListener('click',()=>{registerForm.classList.add('hidden');loginForm.classList.remove('hidden');errorMsg.style.display='none'});
+registerForm.addEventListener('submit',e=>{
+  e.preventDefault();
+  const u=document.getElementById('regUser').value.trim(),p1=document.getElementById('regPass').value,p2=document.getElementById('regPass2').value;
+  if(u.length<2){regError.textContent='✖ 代号至少2字符';regError.style.display='block';return}
+  if(p1.length<6){regError.textContent='✖ 密钥至少6位';regError.style.display='block';return}
+  if(p1!==p2){regError.textContent='✖ 两次输入不一致';regError.style.display='block';return}
+  const users=allUsers();
+  if(users[u]){regError.textContent='✖ 该代号已被占用';regError.style.display='block';return}
+  const r=loadReg();r[u]={password:p1,role:'agent',displayName:u};localStorage.setItem('ghq_registered',JSON.stringify(r));
+  alert('✓ 注册成功');document.getElementById('toLogin').click();document.getElementById('username').value=u;
+});
+</script>
+</body>
+</html>
