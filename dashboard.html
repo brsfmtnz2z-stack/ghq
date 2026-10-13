@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>G.H.Q - 指挥中心</title>
+<link rel="stylesheet" href="common.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-header"><div class="dot"></div>G.H.Q 总部</div>
+    <ul class="sidebar-menu" id="sidebarMenu">
+      <li data-view="overview" class="active">📊 总部概览</li>
+      <li data-view="monitor">📡 实时监控</li>
+      <li data-view="stats">📈 全球伤亡统计</li>
+      <li data-view="continents">🌍 各大洲情报</li>
+      <li class="sep">档案 / 资料</li>
+      <li data-view="archives">📁 灵异事件档案</li>
+      <li data-view="items">📦 灵异物品库</li>
+      <li data-view="map">🗺️ 鬼域地图</li>
+      <li data-view="leaders">👤 城市负责人</li>
+      <li data-view="rank">🏆 等级排行榜</li>
+      <li class="sep">行动 / 社交</li>
+      <li data-view="tasks">📋 任务派发</li>
+      <li data-view="report">⚠️ 事件上报</li>
+      <li data-view="community">💬 社区论坛</li>
+      <li data-view="chat">📻 内网聊天室</li>
+      <li data-view="vote">🗳️ 投票中心</li>
+    </ul>
+    <div class="sidebar-footer">
+      <span id="currentUser">...</span>
+      <a class="logout-btn" id="logoutBtn">[退出]</a>
+    </div>
+  </aside>
+  <main class="main-content">
+    <div class="alert-banner" id="alertBanner">...</div>
+    <div class="top-nav">
+      <div class="search-bar"><input type="text" id="searchInput" placeholder="搜索事件/物品/人物... 回车确认"></div>
+      <div class="system-time" id="clock"></div>
+    </div>
+    <div class="dashboard-scroll" id="viewContainer"></div>
+  </main>
+</div>
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header"><span id="modalTitle"></span><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal()">关闭</button></div>
+  </div>
+</div>
+<script>
+const session=(()=>{try{return JSON.parse(sessionStorage.getItem('ghq_session')||'null')}catch{return null}})();
+if(!session){alert('⚠ 未授权访问');location.href='login.html';throw new Error()}
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n).toLocaleString('en-US');
+const pad=x=>String(x).padStart(2,'0');
+const now=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`};
+const hm=()=>{const d=new Date();return `${pad(d.getHours())}:${pad(d.getMinutes())}`};
+
+const DEF={
+  stats:{death:6401898,missing:3568538,infected:250658022,events:10012,threat:100},
+  events:[
+    {id:1,code:'GH-001',title:'鬼部局核心区空间前环加速',level:'S',region:'亚洲',status:'处理中',time:'2026-10-13 22:00',desc:'001鬼部局核心区空间前环出现异常加速，建议立即启动一级战备。'},
+    {id:2,code:'GH-002',title:'第三号鬼域持续扩大',level:'A',region:'亚洲',status:'监控中',time:'2026-10-13 21:30',desc:'亚洲区第三号鬼域面积较昨日扩大17%，已疏散周边居民。'},
+    {id:3,code:'GH-003',title:'欧洲分部通讯中断',level:'S',region:'欧洲',status:'紧急',time:'2026-10-13 20:15',desc:'欧洲分部自20:15起与总部失去联系，已派遣驰援部队。'},
+    {id:4,code:'GH-004',title:'幽灵列车现身北美',level:'B',region:'北美',status:'已封锁',time:'2026-10-12 18:00',desc:'一列幽灵列车出现在北美中部，已封锁区域。'},
+    {id:5,code:'GH-005',title:'南美雨林发现未知鬼域',level:'A',region:'南美',status:'调查中',time:'2026-10-12 09:00',desc:'卫星图像显示南美雨林出现面积约200平方公里异常区域。'}
+  ],
+  items:[
+    {id:1,name:'人皮纸',level:'S',effect:'记录过往，可追溯时间线',location:'总部档案室',owner:'无'},
+    {id:2,name:'鬼眼',level:'S',effect:'可看见灵异，代价是失去视力',location:'总指挥室',owner:'杨间'},
+    {id:3,name:'鬼烛',level:'A',effect:'点燃后可驱逐普通鬼物',location:'装备库',owner:'无'},
+    {id:4,name:'鬼镜',level:'A',effect:'可通过镜面穿梭',location:'禁闭室',owner:'无'},
+    {id:5,name:'柴刀',level:'S',effect:'可斩杀S级灵异',location:'总指挥室',owner:'杨间'},
+    {id:6,name:'幽灵船',level:'S',effect:'可横渡鬼域',location:'太平洋海域',owner:'无'}
+  ],
+  tasks:[
+    {id:1,title:'驰援欧洲分部',level:'S',reward:5000,desc:'前往欧洲分部支援，调查通讯中断原因'},
+    {id:2,title:'监控第三号鬼域',level:'A',reward:2000,desc:'在第三号鬼域外围建立监控点'},
+    {id:3,title:'回收幽灵列车',level:'A',reward:1500,desc:'前往北美回收幽灵列车'},
+    {id:4,title:'巡逻总部外围',level:'B',reward:500,desc:'常规巡逻任务'},
+    {id:5,title:'采集鬼域样本',level:'B',reward:800,desc:'前往南美采集鬼域样本'}
+  ],
+  rank:[
+    {rank:1,name:'杨间',level:99,contribution:999999,title:'总指挥'},
+    {rank:2,name:'李阳',level:87,contribution:856214,title:'副总指挥'},
+    {rank:3,name:'张雷',level:78,contribution:654789,title:'S级特工'},
+    {rank:4,name:'王浩',level:65,contribution:452136,title:'A级特工'},
+    {rank:5,name:'刘洋',level:52,contribution:325478,title:'A级特工'}
+  ],
+  leaders:[
+    {city:'北京',name:'周强',level:78,status:'在岗'},
+    {city:'上海',name:'孙梅',level:75,status:'在岗'},
+    {city:'广州',name:'陈勇',level:68,status:'执行任务'},
+    {city:'成都',name:'赵刚',level:65,status:'在岗'},
+    {city:'武汉',name:'吴磊',level:70,status:'在岗'},
+    {city:'西安',name:'郑华',level:62,status:'受伤'}
+  ],
+  chat:[
+    {id:1,user:'杨间',msg:'全体注意，001鬼部局出现异常。',time:'22:00',system:false},
+    {id:2,user:'李阳',msg:'收到，已通知各部门。',time:'22:02',system:false},
+    {id:3,user:'张雷',msg:'欧洲分部那边还是没消息。',time:'22:05',system:false}
+  ],
+  posts:[
+    {id:1,user:'李阳',title:'关于欧洲分部失联的分析',content:'根据最后通讯记录，可能是鬼域干扰了信号，建议派遣S级特工前往。',time:'2026-10-13 20:30',likes:12},
+    {id:2,user:'张雷',title:'幽灵列车回收攻略',content:'建议携带鬼烛和柴刀，幽灵列车内温度极低，需准备保暖装备。',time:'2026-10-12 15:00',likes:25}
+  ],
+  votes:[
+    {id:1,title:'是否启动对欧洲分部的紧急驰援?',options:['立即驰援','先侦查','暂缓'],votes:[45,30,5],userVoted:-1},
+    {id:2,title:'是否提高总部警戒等级至一级?',options:['是','否'],votes:[78,2],userVoted:-1}
+  ],
+  alert:'⚠️ ALERT - 001鬼部局核心区空间前环加速。全体作战人员进入一级战备，听候杨间总指挥调遣。红色警告：亚洲区第三号鬼域持续扩大。',
+  reports:[],
+  myTasks:[]
+};
+const DB_VER='ghq_v1_5';
+if(localStorage.getItem('ghq_dbver')!==DB_VER){
+  Object.keys(localStorage).filter(k=>k.startsWith('ghq_')&&k!=='ghq_registered'&&k!=='ghq_dbver').forEach(k=>localStorage.removeItem(k));
+  localStorage.setItem('ghq_dbver',DB_VER);
+}
+function getD(k,fb){try{const v=localStorage.getItem('ghq_'+k);if(!v){localStorage.setItem('ghq_'+k,JSON.stringify(fb));return fb}return JSON.parse(v)}catch{return fb}}
+function setD(k,v){localStorage.setItem('ghq_'+k,JSON.stringify(v))}
+const DB={};Object.keys(DEF).forEach(k=>DB[k]=getD(k,DEF[k]));
+
+const state={view:'overview'};
+$('#currentUser').textContent=`${session.displayName} - Lv.1`;
+$('#alertBanner').textContent=DB.alert;
+
+function tick(){const d=new Date();$('#clock').textContent=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`}
+setInterval(tick,1000);tick();
+
+function closeModal(){document.getElementById('modalOverlay').classList.remove('show')}
+function openModal(title,html){document.getElementById('modalTitle').textContent=title;document.getElementById('modalBody').innerHTML=html;document.getElementById('modalOverlay').classList.add('show')}
+window.closeModal=closeModal;
+
+/* ====== 视图 ====== */
+const VIEWS={};
+
+VIEWS.overview=()=>{
+  const s=DB.stats;
+  const total=14816,target=10000,pct=Math.min(100,total/target*100);
+  return `
+  <div class="section-title">
+    <div>G.H.Q. 指挥中心 <span class="sub">总览态势</span><div class="sub" style="margin-top:6px">${now()} · 系统运行正常 · 实时数据已同步</div></div>
+    <div class="threat-level">${s.threat}%<span>THREAT</span></div>
+  </div>
+  <div class="task-bar">
+    <div class="task-info"><span>📡 全服任务 · 集结中｜紧急任务 · 驰援欧洲</span><span>${fmt(total)} / ${fmt(target)} (${pct.toFixed(1)}%)</span></div>
+    <div class="progress-bg"><div class="progress-fill" style="width:${pct}%"></div></div>
+    <div style="font-size:11px;margin-top:8px;color:var(--text-dim)">您的响应已计入全服增幅序列，距守卫阶段14分钟</div>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-card red"><div class="stat-label">累计死亡</div><div class="stat-value">${fmt(s.death)}</div><div class="stat-sync">实时同步 | 24H <span class="up">+135,086</span></div></div>
+    <div class="stat-card orange"><div class="stat-label">累计失踪</div><div class="stat-value">${fmt(s.missing)}</div><div class="stat-sync">实时同步 | 24H <span class="up">+81,219</span></div></div>
+    <div class="stat-card blue"><div class="stat-label">受感染人口</div><div class="stat-value">${fmt(s.infected)}</div><div class="stat-sync">实时同步 | 24H <span class="up">+472,801</span></div></div>
+    <div class="stat-card green"><div class="stat-label">活跃事件</div><div class="stat-value">${fmt(s.events)}</div><div class="stat-sync">实时同步 | 24H <span class="up">+2,701</span></div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">📋 最新事件通报</div>
+    <table><thead><tr><th>编号</th><th>事件</th><th>等级</th><th>地区</th><th>状态</th><th>时间</th></tr></thead><tbody>
+    ${DB.events.slice(0,5).map(e=>`<tr><td>${esc(e.code)}</td><td>${esc(e.title)}</td><td><span class="tag ${esc(e.level)}">${esc(e.level)}</span></td><td>${esc(e.region)}</td><td>${esc(e.status)}</td><td class="dim">${esc(e.time)}</td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+};
+
+VIEWS.monitor=()=>{
+  return `
+  <div class="section-title"><div>📡 实时监控</div></div>
+  <div class="stats-grid">
+    <div class="stat-card red"><div class="stat-label">总部周边警戒</div><div class="stat-value">Ⅱ级</div><div class="stat-sync">下次巡检 5min</div></div>
+    <div class="stat-card orange"><div class="stat-label">在线特工</div><div class="stat-value" id="monOnline">1,247</div><div class="stat-sync">实时同步</div></div>
+    <div class="stat-card blue"><div class="stat-label">活跃鬼域</div><div class="stat-value">37</div><div class="stat-sync">较昨日 +3</div></div>
+    <div class="stat-card green"><div class="stat-label">信号稳定度</div><div class="stat-value">98.7%</div><div class="stat-sync">正常</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">📶 各区域实时监控 <button class="btn" onclick="refreshMonitor()">刷新监控</button></div>
+    <table><thead><tr><th>区域</th><th>状态</th><th>信号强度</th><th>最近更新</th></tr></thead><tbody>
+      <tr><td>亚洲-东区</td><td><span style="color:#ff3333">⚠ 异常</span></td><td>42%</td><td class="dim">${now()}</td></tr>
+      <tr><td>亚洲-西区</td><td><span style="color:#39ff14">✓ 正常</span></td><td>96%</td><td class="dim">${now()}</td></tr>
+      <tr><td>欧洲区</td><td><span style="color:#ff3333">✖ 失联</span></td><td>0%</td><td class="dim">2026-10-13 20:15</td></tr>
+      <tr><td>北美区</td><td><span style="color:#ff9933">⚠ 警戒</span></td><td>78%</td><td class="dim">${now()}</td></tr>
+      <tr><td>南美区</td><td><span style="color:#39ff14">✓ 正常</span></td><td>91%</td><td class="dim">${now()}</td></tr>
+      <tr><td>非洲区</td><td><span style="color:#39ff14">✓ 正常</span></td><td>88%</td><td class="dim">${now()}</td></tr>
+    </tbody></table>
+  </div>
+  <div class="panel">
+    <div class="panel-title">🎥 监控日志</div>
+    <div style="font-size:12px;line-height:2;color:var(--text-dim)">
+      <div>[${hm()}] 亚洲-东区检测到异常波动</div>
+      <div>[${hm()}] 系统自动备份完成</div>
+      <div>[${hm()}] 欧洲区信号丢失，已发送警报</div>
+      <div>[${hm()}] 特工"李阳"上线</div>
+    </div>
+  </div>`;
+};
+window.refreshMonitor=()=>{document.getElementById('monOnline').textContent=fmt(1200+Math.floor(Math.random()*200));alert('✓ 监控数据已刷新')};
+
+VIEWS.stats=()=>{
+  const s=DB.stats;
+  return `
+  <div class="section-title"><div>📈 全球伤亡统计</div></div>
+  <div class="stats-grid">
+    <div class="stat-card red"><div class="stat-label">累计死亡</div><div class="stat-value">${fmt(s.death)}</div><div class="stat-sync">24H <span class="up">+135,086</span></div></div>
+    <div class="stat-card orange"><div class="stat-label">累计失踪</div><div class="stat-value">${fmt(s.missing)}</div><div class="stat-sync">24H <span class="up">+81,219</span></div></div>
+    <div class="stat-card blue"><div class="stat-label">受感染人口</div><div class="stat-value">${fmt(s.infected)}</div><div class="stat-sync">24H <span class="up">+472,801</span></div></div>
+    <div class="stat-card green"><div class="stat-label">活跃事件</div><div class="stat-value">${fmt(s.events)}</div><div class="stat-sync">24H <span class="up">+2,701</span></div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">📊 近 7 日死亡趋势</div>
+    <div style="display:flex;align-items:flex-end;gap:8px;height:180px;padding:10px 0">
+      ${[65,72,58,88,95,80,100].map((v,i)=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:100%;height:${v}%;background:linear-gradient(180deg,var(--stat-red),rgba(255,51,51,.2));border-radius:3px"></div><div style="font-size:10px;color:var(--text-dim)">D-${6-i}</div></div>`).join('')}
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">🌍 各地区统计</div>
+    <table><thead><tr><th>地区</th><th>死亡</th><th>失踪</th><th>感染</th></tr></thead><tbody>
+      <tr><td>亚洲</td><td>${fmt(3200000)}</td><td>${fmt(1800000)}</td><td>${fmt(120000000)}</td></tr>
+      <tr><td>欧洲</td><td>${fmt(1500000)}</td><td>${fmt(900000)}</td><td>${fmt(60000000)}</td></tr>
+      <tr><td>北美</td><td>${fmt(900000)}</td><td>${fmt(500000)}</td><td>${fmt(40000000)}</td></tr>
+      <tr><td>南美</td><td>${fmt(500000)}</td><td>${fmt(250000)}</td><td>${fmt(20000000)}</td></tr>
+      <tr><td>非洲</td><td>${fmt(301898)}</td><td>${fmt(118538)}</td><td>${fmt(10658022)}</td></tr>
+    </tbody></table>
+  </div>`;
+};
+
+VIEWS.continents=()=>{
+  const data=[['亚洲','极高','🔴','鬼部局核心区异常，第三号鬼域持续扩大'],['欧洲','高','🟠','分部失联，通讯中断'],['北美','中','🟡','幽灵列车已被封锁'],['南美','中','🟡','雨林发现未知鬼域'],['非洲','低','🟢','暂无异常'],['大洋洲','低','🟢','暂无异常']];
+  return `<div class="section-title"><div>🌍 各大洲情报</div></div><div class="stats-grid">${data.map(d=>`<div class="stat-card ${d[1]==='极高'?'red':d[1]==='高'?'orange':d[1]==='中'?'purple':'green'}"><div class="stat-label">${d[2]} ${d[0]} · 危险等级 ${d[1]}</div><div style="font-size:13px;margin-top:10px;line-height:1.6;color:var(--text-main)">${d[3]}</div></div>`).join('')}</div>`;
+};
+
+VIEWS.archives=()=>`
+  <div class="section-title"><div>📁 灵异事件档案</div></div>
+  <div class="panel">
+    <table><thead><tr><th>编号</th><th>事件</th><th>等级</th><th>地区</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>
+    ${DB.events.map(e=>`<tr><td>${esc(e.code)}</td><td>${esc(e.title)}</td><td><span class="tag ${esc(e.level)}">${esc(e.level)}</span></td><td>${esc(e.region)}</td><td>${esc(e.status)}</td><td class="dim">${esc(e.time)}</td><td><button class="btn" onclick="viewEvent(${e.id})">详情</button></td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+window.viewEvent=id=>{const e=DB.events.find(x=>x.id===id);if(!e)return;openModal(`档案 ${e.code}`,
+  `<div style="line-height:2"><div><strong>事件名称：</strong>${esc(e.title)}</div><div><strong>危险等级：</strong><span class="tag ${esc(e.level)}">${esc(e.level)}</span></div><div><strong>所属地区：</strong>${esc(e.region)}</div><div><strong>当前状态：</strong>${esc(e.status)}</div><div><strong>发生时间：</strong>${esc(e.time)}</div><div style="margin-top:15px;padding-top:15px;border-top:1px solid var(--border-color)"><strong>详情：</strong><br>${esc(e.desc)}</div></div>`);
+};
+
+VIEWS.items=()=>`
+  <div class="section-title"><div>📦 灵异物品库</div></div>
+  <div class="panel">
+    <table><thead><tr><th>名称</th><th>等级</th><th>效果</th><th>存放位置</th><th>持有者</th><th>操作</th></tr></thead><tbody>
+    ${DB.items.map(i=>`<tr><td><strong>${esc(i.name)}</strong></td><td><span class="tag ${esc(i.level)}">${esc(i.level)}</span></td><td>${esc(i.effect)}</td><td>${esc(i.location)}</td><td>${esc(i.owner)}</td><td><button class="btn" onclick="viewItem(${i.id})">详情</button></td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+window.viewItem=id=>{const i=DB.items.find(x=>x.id===id);if(!i)return;openModal(`物品 · ${i.name}`,
+  `<div style="line-height:2"><div><strong>名称：</strong>${esc(i.name)}</div><div><strong>等级：</strong><span class="tag ${esc(i.level)}">${esc(i.level)}</span></div><div><strong>效果：</strong>${esc(i.effect)}</div><div><strong>存放位置：</strong>${esc(i.location)}</div><div><strong>持有者：</strong>${esc(i.owner)}</div></div>`);
+};
+
+VIEWS.map=()=>{
+  let cells='';
+  for(let i=0;i<200;i++){
+    const r=Math.random();
+    const cls=r>0.94?'danger':r>0.85?'warning':r>0.75?'safe':'';
+    cells+=`<div class="map-cell ${cls}" onclick="mapClick(${i},'${cls}')"></div>`;
+  }
+  return `
+  <div class="section-title"><div>🗺️ 鬼域地图</div><span class="sub">点击格子查看详情</span></div>
+  <div class="panel">
+    <div class="panel-title">
+      <div><span style="color:#ff3333">■</span> 高危鬼域 &nbsp; <span style="color:#ff9933">■</span> 警戒区 &nbsp; <span style="color:#39ff14">■</span> 已控制 &nbsp; <span style="color:#0a1a10">■</span> 未知</div>
+      <button class="btn" onclick="render()">重新扫描</button>
+    </div>
+    <div class="map-grid">${cells}</div>
+  </div>`;
+};
+window.mapClick=(i,c)=>{const names=['高危鬼域','警戒区','已控制','未知区域'];const idx=c==='danger'?0:c==='warning'?1:c==='safe'?2:3;openModal(`坐标 [${(i%20)},${Math.floor(i/20)}]`,`<div style="line-height:2"><div><strong>状态：</strong>${names[idx]}</div><div><strong>信号：</strong>${(60+Math.random()*40).toFixed(1)}%</div><div><strong>扫描时间：</strong>${now()}</div></div>`)};
+
+VIEWS.leaders=()=>`
+  <div class="section-title"><div>👤 城市负责人</div></div>
+  <div class="panel">
+    <table><thead><tr><th>城市</th><th>负责人</th><th>等级</th><th>状态</th><th>操作</th></tr></thead><tbody>
+    ${DB.leaders.map(l=>`<tr><td>${esc(l.city)}</td><td>${esc(l.name)}</td><td>Lv.${l.level}</td><td>${l.status==='在岗'?'<span style="color:#39ff14">✓ 在岗</span>':l.status==='受伤'?'<span style="color:#ff9933">⚠ 受伤</span>':'<span style="color:#33ccff">'+esc(l.status)+'</span>'}</td><td><button class="btn" onclick="alert('已向 ${esc(l.name)} 发送通讯请求')">通讯</button></td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+
+VIEWS.rank=()=>`
+  <div class="section-title"><div>🏆 等级排行榜</div></div>
+  <div class="stats-grid">
+    ${DB.rank.slice(0,3).map((r,i)=>`<div class="stat-card ${['orange','blue','purple'][i]}"><div class="stat-label">NO.${r.rank} · ${esc(r.title)}</div><div class="stat-value" style="font-size:24px">${esc(r.name)}</div><div class="stat-sync">Lv.${r.level} · 贡献 ${fmt(r.contribution)}</div></div>`).join('')}
+  </div>
+  <div class="panel">
+    <table><thead><tr><th>排名</th><th>姓名</th><th>等级</th><th>称号</th><th>贡献值</th></tr></thead><tbody>
+    ${DB.rank.map(r=>`<tr><td>#${r.rank}</td><td>${esc(r.name)}</td><td>Lv.${r.level}</td><td>${esc(r.title)}</td><td>${fmt(r.contribution)}</td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+
+VIEWS.tasks=()=>`
+  <div class="section-title"><div>📋 任务派发</div></div>
+  <div class="panel">
+    <table><thead><tr><th>任务</th><th>等级</th><th>奖励</th><th>描述</th><th>操作</th></tr></thead><tbody>
+    ${DB.tasks.map(t=>{const taken=DB.myTasks.includes(t.id);return `<tr><td><strong>${esc(t.title)}</strong></td><td><span class="tag ${esc(t.level)}">${esc(t.level)}</span></td><td style="color:#39ff14">${t.reward} EXP</td><td class="dim">${esc(t.desc)}</td><td>${taken?`<button class="btn" disabled>已接取</button>`:`<button class="btn" onclick="takeTask(${t.id})">接取</button>`}</td></tr>`}).join('')}
+    </tbody></table>
+  </div>
+  ${DB.myTasks.length?`<div class="panel"><div class="panel-title">📌 我的任务 (${DB.myTasks.length})</div>${DB.myTasks.map(id=>{const t=DB.tasks.find(x=>x.id===id);return `<div class="post-card"><div class="post-title">${esc(t.title)} <span class="tag ${esc(t.level)}">${esc(t.level)}</span></div><div class="post-content">${esc(t.desc)}</div><button class="btn red" onclick="dropTask(${t.id})">放弃任务</button></div>`}).join('')}</div>`:''}`;
+window.takeTask=id=>{if(!DB.myTasks.includes(id)){DB.myTasks.push(id);setD('myTasks',DB.myTasks);alert('✓ 任务已接取');render()}};
+window.dropTask=id=>{DB.myTasks=DB.myTasks.filter(x=>x!==id);setD('myTasks',DB.myTasks);render()};
+
+VIEWS.report=()=>`
+  <div class="section-title"><div>⚠️ 事件上报</div></div>
+  <div class="panel">
+    <form id="reportForm">
+      <div class="form-group"><label>事件标题</label><input type="text" id="rptTitle" required></div>
+      <div class="form-group"><label>危险等级</label><select id="rptLevel"><option>S</option><option>A</option><option>B</option><option>C</option></select></div>
+      <div class="form-group"><label>所在地区</label><input type="text" id="rptRegion" placeholder="例：亚洲-东区" required></div>
+      <div class="form-group"><label>详细描述</label><textarea id="rptDesc" required></textarea></div>
+      <button type="submit" class="btn">提交上报</button>
+    </form>
+  </div>
+  ${DB.reports.length?`<div class="panel"><div class="panel-title">📌 我的上报记录 (${DB.reports.length})</div>${DB.reports.slice().reverse().map(r=>`<div class="post-card"><div class="post-title">${esc(r.title)} <span class="tag ${esc(r.level)}">${esc(r.level)}</span></div><div class="post-meta">${esc(r.region)} · ${esc(r.time)}</div><div class="post-content">${esc(r.desc)}</div></div>`).join('')}</div>`:''}`;
+
+VIEWS.community=()=>`
+  <div class="section-title"><div>💬 社区论坛</div></div>
+  <div class="panel">
+    <div class="panel-title">发表新帖 <button class="btn" onclick="togglePostForm()">展开/收起</button></div>
+    <form id="postForm" style="display:none">
+      <div class="form-group"><input type="text" id="postTitle" placeholder="帖子标题" required></div>
+      <div class="form-group"><textarea id="postContent" placeholder="帖子内容" required></textarea></div>
+      <button type="submit" class="btn">发布</button>
+    </form>
+  </div>
+  <div id="postList">
+  ${DB.posts.slice().reverse().map(p=>`<div class="post-card"><div class="post-title">${esc(p.title)}</div><div class="post-meta">${esc(p.user)} · ${esc(p.time)}</div><div class="post-content">${esc(p.content)}</div><button class="btn" onclick="likePost(${p.id})">♥ 点赞 (${p.likes})</button></div>`).join('')}
+  </div>`;
+window.togglePostForm=()=>{const f=document.getElementById('postForm');f.style.display=f.style.display==='none'?'block':'none'};
+window.likePost=id=>{const p=DB.posts.find(x=>x.id===id);if(p){p.likes++;setD('posts',DB.posts);render()}};
+
+VIEWS.chat=()=>`
+  <div class="section-title"><div>📻 内网聊天室</div></div>
+  <div class="panel">
+    <div class="chat-box" id="chatBox">
+      ${DB.chat.map(m=>`<div class="chat-msg ${m.system?'system':''}"><span class="name">${esc(m.user)}:</span>${esc(m.msg)}<span class="time">${esc(m.time)}</span></div>`).join('')}
+    </div>
+    <div class="chat-input">
+      <input type="text" id="chatInput" placeholder="输入消息，回车发送...">
+      <button class="btn" onclick="sendChat()">发送</button>
+    </div>
+  </div>`;
+window.sendChat=()=>{const inp=document.getElementById('chatInput');const v=inp.value.trim();if(!v)return;DB.chat.push({id:Date.now(),user:session.displayName,msg:v,time:hm(),system:false});setD('chat',DB.chat);inp.value='';render();setTimeout(()=>{const b=document.getElementById('chatBox');if(b)b.scrollTop=b.scrollHeight},50)};
+
+VIEWS.vote=()=>`
+  <div class="section-title"><div>🗳️ 投票中心</div></div>
+  ${DB.votes.map(v=>{const total=v.votes.reduce((a,b)=>a+b,0);return `<div class="panel"><div class="panel-title">${esc(v.title)}<span class="dim" style="font-size:11px">共 ${total} 票</span></div>${v.options.map((o,i)=>{const pct=total>0?(v.votes[i]/total*100).toFixed(1):0;const voted=v.userVoted>=0;return `<div class="vote-option ${voted?'voted':''}" onclick="${voted?'':`castVote(${v.id},${i})`}"><div class="fill" style="width:${voted?pct:0}%"></div><span class="label">${esc(o)}</span><span class="pct">${voted?pct+'%':''}</span></div>`}).join('')}</div>`}).join('')}`;
+window.castVote=(vid,opt)=>{const v=DB.votes.find(x=>x.id===vid);if(!v||v.userVoted>=0)return;v.votes[opt]++;v.userVoted=opt;setD('votes',DB.votes);render()};
+
+/* ====== 渲染 ====== */
+function render(){
+  const f=VIEWS[state.view]||VIEWS.overview;
+  document.getElementById('viewContainer').innerHTML=f();
+  document.querySelectorAll('.sidebar-menu li[data-view]').forEach(li=>li.classList.toggle('active',li.dataset.view===state.view));
+  if(state.view==='chat'){const b=document.getElementById('chatBox');if(b)b.scrollTop=b.scrollHeight}
+  if(state.view==='report'){const form=document.getElementById('reportForm');if(form)form.addEventListener('submit',e=>{e.preventDefault();DB.reports.push({title:document.getElementById('rptTitle').value,level:document.getElementById('rptLevel').value,region:document.getElementById('rptRegion').value,desc:document.getElementById('rptDesc').value,time:now()});setD('reports',DB.reports);alert('✓ 事件已上报总部');render()})}
+  if(state.view==='community'){const form=document.getElementById('postForm');if(form)form.addEventListener('submit',e=>{e.preventDefault();DB.posts.push({id:Date.now(),user:session.displayName,title:document.getElementById('postTitle').value,content:document.getElementById('postContent').value,time:now(),likes:0});setD('posts',DB.posts);render()})}
+}
+
+document.getElementById('sidebarMenu').addEventListener('click',e=>{
+  const li=e.target.closest('li[data-view]');if(!li)return;
+  state.view=li.dataset.view;render();
+});
+document.getElementById('logoutBtn').addEventListener('click',()=>{if(confirm('确认退出登录?')){sessionStorage.removeItem('ghq_session');location.href='login.html'}});
+document.getElementById('searchInput').addEventListener('keydown',e=>{
+  if(e.key!=='Enter')return;
+  const q=e.target.value.trim().toLowerCase();if(!q)return;
+  const ev=DB.events.find(x=>(x.title+x.code+x.desc).toLowerCase().includes(q));
+  const it=DB.items.find(x=>(x.name+x.effect).toLowerCase().includes(q));
+  if(ev){viewEvent(ev.id);return}
+  if(it){viewItem(it.id);return}
+  alert('未找到匹配结果: '+q);
+});
+render();
+/* 数据跳动 */
+setInterval(()=>{
+  DB.stats.death+=Math.floor(Math.random()*20);
+  DB.stats.missing+=Math.floor(Math.random()*15);
+  DB.stats.infected+=Math.floor(Math.random()*200);
+  DB.stats.events+=Math.floor(Math.random()*5);
+  setD('stats',DB.stats);
+  if(state.view==='overview'||state.view==='stats')render();
+},5000);
+</script>
+</body>
+</html>

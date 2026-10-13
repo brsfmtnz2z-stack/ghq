@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>G.H.Q - 管理员控制台</title>
+<link rel="stylesheet" href="common.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-header admin"><div class="dot"></div>⚠ 管理员控制台</div>
+    <ul class="sidebar-menu" id="sidebarMenu">
+      <li data-view="overview" class="active">📊 系统概览</li>
+      <li data-view="events">📁 事件管理</li>
+      <li data-view="items">📦 物品管理</li>
+      <li data-view="tasks">📋 任务管理</li>
+      <li data-view="reports">⚠️ 上报审核</li>
+      <li data-view="users">👥 用户管理</li>
+      <li data-view="alert">📢 全服警报</li>
+      <li data-view="system">⚙️ 系统设置</li>
+    </ul>
+    <div class="sidebar-footer">
+      <span style="color:var(--stat-red)">🛡 ${displayAdmin()}</span>
+      <a class="logout-btn" id="logoutBtn">[退出]</a>
+    </div>
+  </aside>
+  <main class="main-content">
+    <div class="alert-banner" style="background:rgba(255,51,51,.15);color:#ff6666;border-bottom-color:#ff3333">🔒 管理员权限模式 - 所有操作将被记录并写入审计日志。请谨慎操作。</div>
+    <div class="top-nav">
+      <div class="search-bar"><input type="text" id="searchInput" placeholder="搜索事件/物品/用户... 回车确认"></div>
+      <div class="system-time" id="clock"></div>
+    </div>
+    <div class="dashboard-scroll" id="viewContainer"></div>
+  </main>
+</div>
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header"><span id="modalTitle"></span><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal()">关闭</button></div>
+  </div>
+</div>
+<script>
+/* ====== 管理员双重守卫 ====== */
+const session=(()=>{try{return JSON.parse(sessionStorage.getItem('ghq_session')||'null')}catch{return null}})();
+if(!session){alert('⚠ 未授权访问');location.href='login.html';throw new Error()}
+if(session.role!=='admin'){alert('✖ 权限不足。此区域仅限管理员访问。');location.href='dashboard.html';throw new Error()}
+function displayAdmin(){return session.displayName||'admin'}
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n).toLocaleString('en-US');
+const pad=x=>String(x).padStart(2,'0');
+const now=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`};
+
+/* 复用 DB */
+const DEF={
+  stats:{death:6401898,missing:3568538,infected:250658022,events:10012,threat:100},
+  events:[
+    {id:1,code:'GH-001',title:'鬼部局核心区空间前环加速',level:'S',region:'亚洲',status:'处理中',time:'2026-10-13 22:00',desc:'001鬼部局核心区空间前环出现异常加速。'},
+    {id:2,code:'GH-002',title:'第三号鬼域持续扩大',level:'A',region:'亚洲',status:'监控中',time:'2026-10-13 21:30',desc:'亚洲区第三号鬼域面积较昨日扩大17%。'},
+    {id:3,code:'GH-003',title:'欧洲分部通讯中断',level:'S',region:'欧洲',status:'紧急',time:'2026-10-13 20:15',desc:'欧洲分部自20:15起与总部失去联系。'},
+    {id:4,code:'GH-004',title:'幽灵列车现身北美',level:'B',region:'北美',status:'已封锁',time:'2026-10-12 18:00',desc:'一列幽灵列车出现在北美中部。'},
+    {id:5,code:'GH-005',title:'南美雨林发现未知鬼域',level:'A',region:'南美',status:'调查中',time:'2026-10-12 09:00',desc:'卫星图像显示南美雨林出现异常区域。'}
+  ],
+  items:[
+    {id:1,name:'人皮纸',level:'S',effect:'记录过往，可追溯时间线',location:'总部档案室',owner:'无'},
+    {id:2,name:'鬼眼',level:'S',effect:'可看见灵异，代价是失去视力',location:'总指挥室',owner:'杨间'},
+    {id:3,name:'鬼烛',level:'A',effect:'点燃后可驱逐普通鬼物',location:'装备库',owner:'无'},
+    {id:4,name:'鬼镜',level:'A',effect:'可通过镜面穿梭',location:'禁闭室',owner:'无'},
+    {id:5,name:'柴刀',level:'S',effect:'可斩杀S级灵异',location:'总指挥室',owner:'杨间'},
+    {id:6,name:'幽灵船',level:'S',effect:'可横渡鬼域',location:'太平洋海域',owner:'无'}
+  ],
+  tasks:[
+    {id:1,title:'驰援欧洲分部',level:'S',reward:5000,desc:'前往欧洲分部支援'},
+    {id:2,title:'监控第三号鬼域',level:'A',reward:2000,desc:'在第三号鬼域外围建立监控点'},
+    {id:3,title:'回收幽灵列车',level:'A',reward:1500,desc:'前往北美回收幽灵列车'},
+    {id:4,title:'巡逻总部外围',level:'B',reward:500,desc:'常规巡逻任务'},
+    {id:5,title:'采集鬼域样本',level:'B',reward:800,desc:'前往南美采集鬼域样本'}
+  ],
+  rank:[],leaders:[],
+  chat:[],posts:[],votes:[],
+  alert:'⚠️ ALERT - 001鬼部局核心区空间前环加速。全体作战人员进入一级战备。',
+  reports:[],myTasks:[]
+};
+function getD(k,fb){try{const v=localStorage.getItem('ghq_'+k);if(!v){localStorage.setItem('ghq_'+k,JSON.stringify(fb));return fb}return JSON.parse(v)}catch{return fb}}
+function setD(k,v){localStorage.setItem('ghq_'+k,JSON.stringify(v))}
+const DB={};Object.keys(DEF).forEach(k=>DB[k]=getD(k,DEF[k]));
+
+function tick(){const d=new Date();$('#clock').textContent=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`}
+setInterval(tick,1000);tick();
+
+function closeModal(){document.getElementById('modalOverlay').classList.remove('show')}
+function openModal(t,h){document.getElementById('modalTitle').textContent=t;document.getElementById('modalBody').innerHTML=h;document.getElementById('modalOverlay').classList.add('show')}
+window.closeModal=closeModal;
+
+const state={view:'overview'};
+const VIEWS={};
+
+VIEWS.overview=()=>{
+  const s=DB.stats;
+  const users=Object.keys(JSON.parse(localStorage.getItem('ghq_registered')||'{}')).length+2;
+  return `
+  <div class="section-title"><div>📊 系统概览 <span class="sub">管理员视角</span></div></div>
+  <div class="stats-grid">
+    <div class="stat-card red"><div class="stat-label">总死亡</div><div class="stat-value">${fmt(s.death)}</div></div>
+    <div class="stat-card orange"><div class="stat-label">总失踪</div><div class="stat-value">${fmt(s.missing)}</div></div>
+    <div class="stat-card blue"><div class="stat-label">总感染</div><div class="stat-value">${fmt(s.infected)}</div></div>
+    <div class="stat-card green"><div class="stat-label">活跃事件</div><div class="stat-value">${fmt(s.events)}</div></div>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-card purple"><div class="stat-label">注册用户</div><div class="stat-value">${users}</div></div>
+    <div class="stat-card purple"><div class="stat-label">待审核上报</div><div class="stat-value">${DB.reports.length}</div></div>
+    <div class="stat-card purple"><div class="stat-label">事件档案</div><div class="stat-value">${DB.events.length}</div></div>
+    <div class="stat-card purple"><div class="stat-label">物品库</div><div class="stat-value">${DB.items.length}</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">⚡ 快捷操作</div>
+    <button class="btn" onclick="state.view='events';render()">管理事件</button>
+    <button class="btn red" onclick="resetAll()">⚠ 重置所有数据</button>
+    <button class="btn blue" onclick="exportData()">📥 导出数据</button>
+  </div>`;
+};
+window.resetAll=()=>{if(confirm('⚠ 确定要重置所有数据吗? 此操作不可恢复!')){
+  Object.keys(localStorage).filter(k=>k.startsWith('ghq_')&&k!=='ghq_registered').forEach(k=>localStorage.removeItem(k));
+  alert('✓ 数据已重置');location.reload();
+}};
+window.exportData=()=>{
+  const data={};Object.keys(DB).forEach(k=>{data[k]=DB[k]});
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ghq_backup_'+Date.now()+'.json';a.click();
+};
+
+VIEWS.events=()=>`
+  <div class="section-title"><div>📁 事件管理</div></div>
+  <div class="panel">
+    <div class="panel-title">新增事件 <button class="btn" onclick="showEventForm()">+ 添加</button></div>
+    <div id="eventFormWrap"></div>
+  </div>
+  <div class="panel">
+    <table><thead><tr><th>编号</th><th>标题</th><th>等级</th><th>地区</th><th>状态</th><th>操作</th></tr></thead><tbody>
+    ${DB.events.map(e=>`<tr><td>${esc(e.code)}</td><td>${esc(e.title)}</td><td><span class="tag ${esc(e.level)}">${esc(e.level)}</span></td><td>${esc(e.region)}</td><td>${esc(e.status)}</td><td><button class="btn" onclick="editEvent(${e.id})">编辑</button> <button class="btn red" onclick="delEvent(${e.id})">删除</button></td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+window.showEventForm=(id)=>{
+  const e=id?DB.events.find(x=>x.id===id):{code:'',title:'',level:'S',region:'',status:'处理中',desc:''};
+  document.getElementById('eventFormWrap').innerHTML=`
+  <form id="evtForm" style="margin-top:15px">
+    <div class="form-group"><label>编号</label><input type="text" id="evCode" value="${esc(e.code)}" required></div>
+    <div class="form-group"><label>标题</label><input type="text" id="evTitle" value="${esc(e.title)}" required></div>
+    <div class="form-group"><label>等级</label><select id="evLevel">${['S','A','B','C'].map(l=>`<option ${e.level===l?'selected':''}>${l}</option>`).join('')}</select></div>
+    <div class="form-group"><label>地区</label><input type="text" id="evRegion" value="${esc(e.region)}" required></div>
+    <div class="form-group"><label>状态</label><input type="text" id="evStatus" value="${esc(e.status)}" required></div>
+    <div class="form-group"><label>描述</label><textarea id="evDesc">${esc(e.desc)}</textarea></div>
+    <button type="submit" class="btn">保存</button> <button type="button" class="btn red" onclick="document.getElementById('eventFormWrap').innerHTML=''">取消</button>
+  </form>`;
+  document.getElementById('evtForm').addEventListener('submit',ev=>{
+    ev.preventDefault();
+    const obj={code:document.getElementById('evCode').value,title:document.getElementById('evTitle').value,level:document.getElementById('evLevel').value,region:document.getElementById('evRegion').value,status:document.getElementById('evStatus').value,desc:document.getElementById('evDesc').value,time:now()};
+    if(id){Object.assign(DB.events.find(x=>x.id===id),obj)}else{obj.id=Date.now();DB.events.push(obj)}
+    setD('events',DB.events);alert('✓ 已保存');render();
+  });
+};
+window.editEvent=id=>showEventForm(id);
+window.delEvent=id=>{if(confirm('确认删除此事件?')){DB.events=DB.events.filter(x=>x.id!==id);setD('events',DB.events);render()}};
+
+VIEWS.items=()=>`
+  <div class="section-title"><div>📦 物品管理</div></div>
+  <div class="panel">
+    <div class="panel-title">新增物品 <button class="btn" onclick="showItemForm()">+ 添加</button></div>
+    <div id="itemFormWrap"></div>
+  </div>
+  <div class="panel">
+    <table><thead><tr><th>名称</th><th>等级</th><th>效果</th><th>位置</th><th>持有者</th><th>操作</th></tr></thead><tbody>
+    ${DB.items.map(i=>`<tr><td>${esc(i.name)}</td><td><span class="tag ${esc(i.level)}">${esc(i.level)}</span></td><td>${esc(i.effect)}</td><td>${esc(i.location)}</td><td>${esc(i.owner)}</td><td><button class="btn" onclick="editItem(${i.id})">编辑</button> <button class="btn red" onclick="delItem(${i.id})">删除</button></td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+window.showItemForm=(id)=>{
+  const i=id?DB.items.find(x=>x.id===id):{name:'',level:'S',effect:'',location:'',owner:''};
+  document.getElementById('itemFormWrap').innerHTML=`
+  <form id="itmForm" style="margin-top:15px">
+    <div class="form-group"><label>名称</label><input type="text" id="itName" value="${esc(i.name)}" required></div>
+    <div class="form-group"><label>等级</label><select id="itLevel">${['S','A','B','C'].map(l=>`<option ${i.level===l?'selected':''}>${l}</option>`).join('')}</select></div>
+    <div class="form-group"><label>效果</label><input type="text" id="itEffect" value="${esc(i.effect)}"></div>
+    <div class="form-group"><label>位置</label><input type="text" id="itLocation" value="${esc(i.location)}"></div>
+    <div class="form-group"><label>持有者</label><input type="text" id="itOwner" value="${esc(i.owner)}"></div>
+    <button type="submit" class="btn">保存</button> <button type="button" class="btn red" onclick="document.getElementById('itemFormWrap').innerHTML=''">取消</button>
+  </form>`;
+  document.getElementById('itmForm').addEventListener('submit',ev=>{
+    ev.preventDefault();
+    const obj={name:document.getElementById('itName').value,level:document.getElementById('itLevel').value,effect:document.getElementById('itEffect').value,location:document.getElementById('itLocation').value,owner:document.getElementById('itOwner').value};
+    if(id){Object.assign(DB.items.find(x=>x.id===id),obj)}else{obj.id=Date.now();DB.items.push(obj)}
+    setD('items',DB.items);alert('✓ 已保存');render();
+  });
+};
+window.editItem=id=>showItemForm(id);
+window.delItem=id=>{if(confirm('确认删除?')){DB.items=DB.items.filter(x=>x.id!==id);setD('items',DB.items);render()}};
+
+VIEWS.tasks=()=>`
+  <div class="section-title"><div>📋 任务管理</div></div>
+  <div class="panel">
+    <div class="panel-title">新增任务 <button class="btn" onclick="showTaskForm()">+ 添加</button></div>
+    <div id="taskFormWrap"></div>
+  </div>
+  <div class="panel">
+    <table><thead><tr><th>任务</th><th>等级</th><th>奖励</th><th>描述</th><th>操作</th></tr></thead><tbody>
+    ${DB.tasks.map(t=>`<tr><td>${esc(t.title)}</td><td><span class="tag ${esc(t.level)}">${esc(t.level)}</span></td><td>${t.reward} EXP</td><td class="dim">${esc(t.desc)}</td><td><button class="btn" onclick="editTask(${t.id})">编辑</button> <button class="btn red" onclick="delTask(${t.id})">删除</button></td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+window.showTaskForm=(id)=>{
+  const t=id?DB.tasks.find(x=>x.id===id):{title:'',level:'B',reward:500,desc:''};
+  document.getElementById('taskFormWrap').innerHTML=`
+  <form id="tskForm" style="margin-top:15px">
+    <div class="form-group"><label>标题</label><input type="text" id="tkTitle" value="${esc(t.title)}" required></div>
+    <div class="form-group"><label>等级</label><select id="tkLevel">${['S','A','B','C'].map(l=>`<option ${t.level===l?'selected':''}>${l}</option>`).join('')}</select></div>
+    <div class="form-group"><label>奖励</label><input type="number" id="tkReward" value="${t.reward}"></div>
+    <div class="form-group"><label>描述</label><textarea id="tkDesc">${esc(t.desc)}</textarea></div>
+    <button type="submit" class="btn">保存</button> <button type="button" class="btn red" onclick="document.getElementById('taskFormWrap').innerHTML=''">取消</button>
+  </form>`;
+  document.getElementById('tskForm').addEventListener('submit',ev=>{
+    ev.preventDefault();
+    const obj={title:document.getElementById('tkTitle').value,level:document.getElementById('tkLevel').value,reward:+document.getElementById('tkReward').value,desc:document.getElementById('tkDesc').value};
+    if(id){Object.assign(DB.tasks.find(x=>x.id===id),obj)}else{obj.id=Date.now();DB.tasks.push(obj)}
+    setD('tasks',DB.tasks);alert('✓ 已保存');render();
+  });
+};
+window.editTask=id=>showTaskForm(id);
+window.delTask=id=>{if(confirm('确认删除?')){DB.tasks=DB.tasks.filter(x=>x.id!==id);setD('tasks',DB.tasks);render()}};
+
+VIEWS.reports=()=>`
+  <div class="section-title"><div>⚠️ 上报审核 <span class="sub">共 ${DB.reports.length} 条</span></div></div>
+  ${DB.reports.length===0?'<div class="panel empty">暂无待审核上报</div>':DB.reports.slice().reverse().map((r,idx)=>`<div class="panel"><div class="panel-title">${esc(r.title)} <span class="tag ${esc(r.level)}">${esc(r.level)}</span></div><div style="font-size:12px;color:var(--text-dim);margin-bottom:10px">${esc(r.region)} · ${esc(r.time)}</div><div style="line-height:1.7">${esc(r.desc)}</div><div class="mt-10"><button class="btn" onclick="approveReport(${DB.reports.length-1-idx})">✓ 通过(转为正式事件)</button> <button class="btn red" onclick="rejectReport(${DB.reports.length-1-idx})">✖ 驳回</button></div></div>`).join('')}`;
+window.approveReport=idx=>{
+  const r=DB.reports[idx];if(!r)return;
+  DB.events.push({id:Date.now(),code:'GH-'+String(DB.events.length+1).padStart(3,'0'),title:r.title,level:r.level,region:r.region,status:'已受理',time:now(),desc:r.desc});
+  setD('events',DB.events);
+  DB.reports.splice(idx,1);setD('reports',DB.reports);
+  alert('✓ 已转为正式事件');render();
+};
+window.rejectReport=idx=>{if(confirm('确认驳回?')){DB.reports.splice(idx,1);setD('reports',DB.reports);render()}};
+
+VIEWS.users=()=>{
+  const reg=JSON.parse(localStorage.getItem('ghq_registered')||'{}');
+  const all=Object.assign({admin:{password:'******',role:'admin',displayName:'总指挥'},Shiyi13:{password:'******',role:'agent',displayName:'十一'}},reg);
+  return `
+  <div class="section-title"><div>👥 用户管理 <span class="sub">共 ${Object.keys(all).length} 个账号</span></div></div>
+  <div class="panel">
+    <table><thead><tr><th>代号</th><th>昵称</th><th>角色</th><th>密码</th><th>操作</th></tr></thead><tbody>
+    ${Object.entries(all).map(([u,info])=>`<tr><td><strong>${esc(u)}</strong></td><td>${esc(info.displayName||u)}</td><td>${info.role==='admin'?'<span style="color:#ff3333">🛡 管理员</span>':'<span style="color:#39ff14">特工</span>'}</td><td class="dim">${esc(info.password)}</td><td>${info.role==='admin'?'<span class="dim">系统账号</span>':`<button class="btn red" onclick="delUser('${esc(u)}')">删除</button>`}</td></tr>`).join('')}
+    </tbody></table>
+  </div>
+  <div class="panel">
+    <div class="panel-title">重置密码</div>
+    <form id="pwdForm">
+      <div class="form-group"><label>用户代号</label><input type="text" id="pwdUser" required></div>
+      <div class="form-group"><label>新密码</label><input type="text" id="pwdNew" required></div>
+      <button type="submit" class="btn">重置</button>
+    </form>
+  </div>`;
+};
+window.delUser=u=>{if(!confirm(`确认删除账号 ${u}?`))return;const r=JSON.parse(localStorage.getItem('ghq_registered')||'{}');delete r[u];localStorage.setItem('ghq_registered',JSON.stringify(r));render()};
+document.addEventListener('submit',e=>{
+  if(e.target.id==='pwdForm'){
+    e.preventDefault();
+    const u=document.getElementById('pwdUser').value.trim();
+    const p=document.getElementById('pwdNew').value;
+    const r=JSON.parse(localStorage.getItem('ghq_registered')||'{}');
+    if(r[u]){r[u].password=p;localStorage.setItem('ghq_registered',JSON.stringify(r));alert('✓ 密码已重置')}
+    else{alert('✖ 未找到该注册用户 (内置账号请直接修改代码)')}
+  }
+},true);
+
+VIEWS.alert=()=>`
+  <div class="section-title"><div>📢 全服警报</div></div>
+  <div class="panel">
+    <div class="panel-title">当前警报内容</div>
+    <div style="padding:15px;background:rgba(255,51,51,.08);border-left:3px solid #ff3333;font-size:13px;line-height:1.7">${esc(DB.alert)}</div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">修改警报</div>
+    <form id="alertForm">
+      <div class="form-group"><textarea id="alertText" style="min-height:120px">${esc(DB.alert)}</textarea></div>
+      <button type="submit" class="btn">更新警报</button>
+      <button type="button" class="btn red" onclick="clearAlert()">清空警报</button>
+    </form>
+  </div>`;
+document.addEventListener('submit',e=>{
+  if(e.target.id==='alertForm'){
+    e.preventDefault();
+    DB.alert=document.getElementById('alertText').value;setD('alert',DB.alert);
+    alert('✓ 警报已更新，所有特工端将同步显示');render();
+  }
+},true);
+window.clearAlert=()=>{DB.alert='';setD('alert','');render()};
+
+VIEWS.system=()=>`
+  <div class="section-title"><div>⚙️ 系统设置</div></div>
+  <div class="panel">
+    <div class="panel-title">数据管理</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn blue" onclick="exportData()">📥 导出数据</button>
+      <button class="btn red" onclick="resetAll()">⚠ 重置全部数据</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">系统信息</div>
+    <div style="line-height:2;font-size:13px">
+      <div><strong>版本：</strong>GHQ v1.5</div>
+      <div><strong>登录身份：</strong>${esc(session.displayName)} (管理员)</div>
+      <div><strong>登录时间：</strong>${new Date(session.loginAt).toLocaleString()}</div>
+      <div><strong>当前时间：</strong>${now()}</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">修改管理员密码（内置账号需改代码）</div>
+    <div class="dim" style="font-size:12px">内置管理员账号 admin/admin888 需要在 login.html 源码中修改 BUILTIN 对象。</div>
+  </div>`;
+
+function render(){
+  const f=VIEWS[state.view]||VIEWS.overview;
+  document.getElementById('viewContainer').innerHTML=f();
+  document.querySelectorAll('.sidebar-menu li[data-view]').forEach(li=>li.classList.toggle('active',li.dataset.view===state.view));
+}
+document.getElementById('sidebarMenu').addEventListener('click',e=>{
+  const li=e.target.closest('li[data-view]');if(!li)return;
+  state.view=li.dataset.view;render();
+});
+document.getElementById('logoutBtn').addEventListener('click',()=>{if(confirm('确认退出?')){sessionStorage.removeItem('ghq_session');location.href='login.html'}});
+document.getElementById('searchInput').addEventListener('keydown',e=>{
+  if(e.key!=='Enter')return;
+  const q=e.target.value.trim().toLowerCase();if(!q)return;
+  const ev=DB.events.find(x=>(x.title+x.code+x.desc).toLowerCase().includes(q));
+  if(ev){state.view='events';render();setTimeout(()=>editEvent(ev.id),50);return}
+  alert('未找到: '+q);
+});
+render();
+</script>
+</body>
+</html>
